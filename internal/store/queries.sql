@@ -55,6 +55,13 @@ AND type = "no_captions";
 DELETE FROM failures
 WHERE id = ?;
 
+-- name: NextFailure :one
+SELECT * FROM failures
+WHERE id > ?
+AND type = ?
+ORDER BY id ASC
+LIMIT 1;
+
 -- name: Video :one
 SELECT * FROM videos
 WHERE id = ?;

@@ -21,9 +21,9 @@ func Up(tx *sql.Tx) error {
 	defer rows.Close()
 
 	var id, searchableTranscript string
-    updated := strings.Builder{}
+	updated := strings.Builder{}
 	for rows.Next() {
-        updated.Reset()
+		updated.Reset()
 		if err := rows.Scan(&id, &searchableTranscript); err != nil {
 			return fmt.Errorf("scanning video row: %w", err)
 		}

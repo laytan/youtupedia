@@ -162,22 +162,29 @@ func (c *Client) PlaylistItems(playlistId string, token string) (*ResPlaylistIte
 	return &result, nil
 }
 
+// EachPlaylistItemPage goes through all pages of the given playlist,
+// calling f for each of them, if PlaylistItem returns an error,
+// it is given in the call to f, this could be ErrQuotaExceeded or another unexpected error.
+//
+// If f returns an error, it is returned from this outer function.
+// If f returns false for cont, nil is returned and no other page is processed.
 func (c *Client) EachPlaylistItemPage(
 	playlistId string,
-	f func(*ResPlaylistItems, string, error) bool,
+	f func(page *ResPlaylistItems, token string, e error) (cont bool, err error),
 ) error {
 	var token string
 	for {
 		items, err := c.PlaylistItems(playlistId, token)
-		cont := f(items, token, err)
+		cont, err := f(items, token, err)
+		if err != nil {
+			return fmt.Errorf("processing page %s: %w", token, err)
+		}
 		if !cont {
 			return nil
 		}
-
 		if items.NextPageToken == "" {
 			return nil
 		}
-
 		token = items.NextPageToken
 	}
 }

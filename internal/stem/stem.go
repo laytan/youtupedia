@@ -15,7 +15,7 @@ func StemLine(value string) string {
 		`\`, "",
 		"[", "",
 		"]", "",
-    )
+	)
 	noSpecial := repper.Replace(value)
 	words := strings.Fields(noSpecial)
 

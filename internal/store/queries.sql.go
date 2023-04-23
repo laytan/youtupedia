@@ -179,6 +179,33 @@ func (q *Queries) LastVideo(ctx context.Context, channelID string) (Video, error
 	return i, err
 }
 
+const nextFailure = `-- name: NextFailure :one
+SELECT id, channel_id, data, type, created_at, updated_at FROM failures
+WHERE id > ?
+AND type = ?
+ORDER BY id ASC
+LIMIT 1
+`
+
+type NextFailureParams struct {
+	ID   int64
+	Type string
+}
+
+func (q *Queries) NextFailure(ctx context.Context, arg NextFailureParams) (Failure, error) {
+	row := q.db.QueryRowContext(ctx, nextFailure, arg.ID, arg.Type)
+	var i Failure
+	err := row.Scan(
+		&i.ID,
+		&i.ChannelID,
+		&i.Data,
+		&i.Type,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const noCaptionFailures = `-- name: NoCaptionFailures :many
 SELECT id, channel_id, data, type, created_at, updated_at FROM failures
 WHERE channel_id = ?
