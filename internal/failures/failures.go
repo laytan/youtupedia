@@ -1,6 +1,7 @@
 package failures
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/csv"
@@ -14,6 +15,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/laytan/youtupedia/internal/stem"
 	"github.com/laytan/youtupedia/internal/store"
@@ -25,8 +27,8 @@ var (
 	Queries *store.Queries
 	Yt      *tube.Client
 
-	BinWhisperCpp    = "../../../whisper.cpp/main"
-	WhisperModelPath = "../../../whisper.cpp/models/ggml-base.en.bin"
+	BinWhisperCpp    = "../whisper.cpp/main"
+	WhisperModelPath = "../whisper.cpp/models/ggml-base.en.bin"
 	BinFfmpeg        = "ffmpeg"
 	BinYtDlp         = "yt-dlp"
 )
@@ -46,8 +48,12 @@ func WhisperNoCaptionFailures(ctx context.Context) (err error) {
 		select {
 		case <-ctx.Done():
 			cancel()
+            // Sleep so cleanup can finish.
+            // Don't @ me!
+            time.Sleep(time.Second)
 			return
 		case <-signals:
+            signal.Stop(signals)
 			cancel()
 		case nerr := <-errs:
 			err = errors.Join(err, nerr)
@@ -86,9 +92,10 @@ func Failures(ctx context.Context, errs chan<- error, typ store.FailureType) <-c
 }
 
 type Download struct {
-	VideoId string
-	Path    string
-	Video   *tube.ResVideo
+	FailureId int64
+	VideoId   string
+	Path      string
+	Video     *tube.ResVideo
 }
 
 func DownloadFailures(
@@ -116,7 +123,13 @@ func DownloadFailures(
 
 					log.Println("[INFO]: checking if video does does not already exist")
 					if _, err := Queries.Video(ctx, videoId); err == nil {
-						log.Println("[WARN]: video already in database")
+						log.Println("[WARN]: video already in database, removing failure")
+
+						if err := Queries.DeleteFailure(ctx, failure.ID); err != nil {
+							errs <- fmt.Errorf("deleting indexed failure: %w", err)
+							return false
+						}
+
 						return true
 					}
 
@@ -142,15 +155,21 @@ func DownloadFailures(
 						ctx,
 						BinYtDlp,
 						"--ignore-config",
+                        "--no-progress",
 						"--output",
 						videoId+".wav",
 						"--extract-audio",
 						"--audio-format",
 						"wav",
+						"--default-search",
+						"ytsearch",
+						"--",
 						videoId,
 					)
+					dlStdout := &bytes.Buffer{}
+					cmd.Stdout = dlStdout // Need to capture stdout for error messages, for some reasons errors are shown on stdout.
 					if err := cmd.Run(); err != nil {
-						handleExecErr("yt-dlp", err, errs)
+						handleExecErr("yt-dlp", err, errs, dlStdout.String())
 						return false
 					}
 
@@ -166,10 +185,13 @@ func DownloadFailures(
 						"1",
 						"-c:a",
 						"pcm_s16le",
+                        "--",
 						videoId+".16k.wav",
 					)
+					dlStdout.Reset()
+					cmd.Stdout = dlStdout // Need to capture stdout for error messages, for some reasons errors are shown on stdout.
 					if err := cmd.Run(); err != nil {
-						handleExecErr("ffmpeg", err, errs)
+						handleExecErr("ffmpeg", err, errs, dlStdout.String())
 						return false
 					}
 
@@ -179,9 +201,10 @@ func DownloadFailures(
 					case <-ctx.Done():
 						return false
 					case c <- &Download{
-						Path:    videoId + ".16k.wav",
-						VideoId: videoId,
-						Video:   video,
+						FailureId: failure.ID,
+						Path:      videoId + ".16k.wav",
+						VideoId:   videoId,
+						Video:     video,
 					}:
 						return true
 					}
@@ -197,9 +220,10 @@ func DownloadFailures(
 }
 
 type Whisper struct {
-	VideoId string
-	Path    string
-	Video   *tube.ResVideo
+	FailureId int64
+	VideoId   string
+	Path      string
+	Video     *tube.ResVideo
 }
 
 func WhisperDownloads(
@@ -241,8 +265,10 @@ func WhisperDownloads(
 						download.Path,
 						"-ocsv",
 					)
+                    dlStdout := bytes.Buffer{}
+                    cmd.Stdout = &dlStdout // Need to capture stdout for error messages, for some reasons errors are shown on stdout.
 					if err := cmd.Run(); err != nil {
-						handleExecErr("whisper.cpp", err, errs)
+						handleExecErr("whisper.cpp", err, errs, dlStdout.String())
 						return false
 					}
 
@@ -251,9 +277,10 @@ func WhisperDownloads(
 					case <-ctx.Done():
 						return false
 					case c <- &Whisper{
-						VideoId: videoId,
-						Path:    download.Path + ".csv",
-						Video:   download.Video,
+						FailureId: download.FailureId,
+						VideoId:   videoId,
+						Path:      download.Path + ".csv",
+						Video:     download.Video,
 					}:
 						return true
 					}
@@ -272,7 +299,7 @@ func IndexWhispers(ctx context.Context, errs chan<- error, whispers <-chan *Whis
 	go func() {
 		for {
 			cont := func() bool {
-				log.Println("waiting for next whisper to index...")
+                log.Println("[INFO]: waiting for next whisper to index...")
 				select {
 				case <-ctx.Done():
 					return false
@@ -280,7 +307,7 @@ func IndexWhispers(ctx context.Context, errs chan<- error, whispers <-chan *Whis
 					if !ok {
 						return false
 					}
-					log.Println("retrieved whisper to index...")
+                    log.Println("[INFO]: retrieved whisper to index...")
 
 					defer func() {
 						log.Printf("[INFO]: deleting file %s (cleanup)", whisper.Path)
@@ -410,6 +437,11 @@ func IndexWhispers(ctx context.Context, errs chan<- error, whispers <-chan *Whis
 						return false
 					}
 
+					if err := qtx.DeleteFailure(ctx, whisper.FailureId); err != nil {
+						errs <- fmt.Errorf("deleting indexed failure: %w", err)
+						return false
+					}
+
 					log.Println("[INFO]: saving to the database")
 					if err := tx.Commit(); err != nil {
 						errs <- fmt.Errorf("committing transaction: %w", err)
@@ -448,7 +480,7 @@ Outer:
 	}
 }
 
-func handleExecErr(id string, err error, errs chan<- error) {
+func handleExecErr(id string, err error, errs chan<- error, extra ...string) {
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		if exitErr.ExitCode() == -1 { // context cancelled.
@@ -457,9 +489,10 @@ func handleExecErr(id string, err error, errs chan<- error) {
 		}
 
 		errs <- fmt.Errorf(
-			id+": exit code %d and stderr %q: %w",
+			id+": exit code %d and stderr %q and extra: %q: %w",
 			exitErr.ExitCode(),
 			string(exitErr.Stderr),
+			strings.Join(extra, ", "),
 			err,
 		)
 		return

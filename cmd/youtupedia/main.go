@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/laytan/youtupedia/internal/failures"
 	"github.com/laytan/youtupedia/internal/index"
@@ -20,7 +21,7 @@ import (
 
 const (
 	ServeChannel  = "UCsBjURrPoezykLs9EqgamOA"
-	TemplatesPath = "../../web/templates"
+	TemplatesPath = "web/templates"
 	Port          = ":8080"
 )
 
@@ -83,10 +84,15 @@ func main() {
 		http.Handle("/", http.FileServer(http.Dir("web/static")))
 
 		http.HandleFunc("/query", func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			defer func() {
+				log.Printf("[INFO]: Search took %s", time.Since(start))
+			}()
+
 			query := r.URL.Query().Get("query")
-			if len(query) < 4 {
+			if len(query) < 3 {
 				w.WriteHeader(http.StatusUnprocessableEntity)
-				_, _ = w.Write([]byte("Please type at least 4 characters"))
+				_, _ = w.Write([]byte("Please type at least 3 characters"))
 				return
 			}
 

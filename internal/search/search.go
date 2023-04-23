@@ -3,7 +3,6 @@ package search
 import (
 	"context"
 	"fmt"
-	"log"
 	"sort"
 	"strconv"
 	"sync"
@@ -26,7 +25,6 @@ type Result struct {
 // Channel retrieves all the videos for the given channel, calling Video on each of them.
 // The results are sorted based on the published time of the video.
 func Channel(ctx context.Context, ch *store.Channel, query string) (res []Result, err error) {
-	log.Printf("[INFO]: searching for %q in %q", query, ch.Title)
 	videos, err := Queries.VideosOfChannel(
 		ctx,
 		ch.ID,
