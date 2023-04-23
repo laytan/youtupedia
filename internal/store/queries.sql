@@ -62,6 +62,11 @@ AND type = ?
 ORDER BY id ASC
 LIMIT 1;
 
+-- name: CountFailures :one
+SELECT COUNT(*) FROM failures
+WHERE type = ?
+AND id > ?; -- Need second arg here because type is a reserved word in go.
+
 -- name: Video :one
 SELECT * FROM videos
 WHERE id = ?;

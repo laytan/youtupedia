@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -27,10 +28,13 @@ var (
 	Queries *store.Queries
 	Yt      *tube.Client
 
-	BinWhisperCpp    = "../whisper.cpp/main"
-	WhisperModelPath = "../whisper.cpp/models/ggml-base.en.bin"
-	BinFfmpeg        = "ffmpeg"
-	BinYtDlp         = "yt-dlp"
+	WhisperModelPath  = "../whisper.cpp/models/ggml-base.en.bin"
+	WhisperThreads    = "1"
+	WhisperProcessors = strconv.Itoa(runtime.NumCPU() - 1) // Keep 1 processor for non-whisper stuff.
+	BinWhisperCpp     = "../whisper.cpp/main"
+
+	BinFfmpeg = "ffmpeg"
+	BinYtDlp  = "yt-dlp"
 )
 
 func WhisperNoCaptionFailures(ctx context.Context) (err error) {
@@ -44,20 +48,31 @@ func WhisperNoCaptionFailures(ctx context.Context) (err error) {
 	wc := WhisperDownloads(ctx, errs, dc)
 	IndexWhispers(ctx, errs, wc)
 
+	reportTicker := time.NewTicker(time.Minute)
+	defer reportTicker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			cancel()
-            // Sleep so cleanup can finish.
-            // Don't @ me!
-            time.Sleep(time.Second)
+			// Sleep so cleanup can finish.
+			// Don't @ me!
+			time.Sleep(time.Second)
 			return
 		case <-signals:
-            signal.Stop(signals)
+			signal.Stop(signals)
 			cancel()
 		case nerr := <-errs:
 			err = errors.Join(err, nerr)
 			cancel()
+		case <-reportTicker.C:
+			count, err := Queries.CountFailures(
+				ctx,
+				store.CountFailuresParams{Type: string(store.FailureTypeNoCaptions)},
+			)
+			if err != nil {
+				errs <- fmt.Errorf("counting failures: %w", err)
+			}
+			log.Printf("[INFO]: %d failures in the queue", count)
 		}
 	}
 }
@@ -155,7 +170,7 @@ func DownloadFailures(
 						ctx,
 						BinYtDlp,
 						"--ignore-config",
-                        "--no-progress",
+						"--no-progress",
 						"--output",
 						videoId+".wav",
 						"--extract-audio",
@@ -185,7 +200,7 @@ func DownloadFailures(
 						"1",
 						"-c:a",
 						"pcm_s16le",
-                        "--",
+						"--",
 						videoId+".16k.wav",
 					)
 					dlStdout.Reset()
@@ -202,7 +217,7 @@ func DownloadFailures(
 						return false
 					case c <- &Download{
 						FailureId: failure.ID,
-						Path:      videoId + ".16k.wav",
+						Path:      videoId + ".16k.wav", // TODO: we sent the message, but it might not be received, so there might not be a cleanup for this file.
 						VideoId:   videoId,
 						Video:     video,
 					}:
@@ -264,9 +279,13 @@ func WhisperDownloads(
 						"-f",
 						download.Path,
 						"-ocsv",
+						"-t",
+						WhisperThreads,
+						"-p",
+						WhisperProcessors,
 					)
-                    dlStdout := bytes.Buffer{}
-                    cmd.Stdout = &dlStdout // Need to capture stdout for error messages, for some reasons errors are shown on stdout.
+					dlStdout := bytes.Buffer{}
+					cmd.Stdout = &dlStdout // Need to capture stdout for error messages, for some reasons errors are shown on stdout.
 					if err := cmd.Run(); err != nil {
 						handleExecErr("whisper.cpp", err, errs, dlStdout.String())
 						return false
@@ -299,7 +318,7 @@ func IndexWhispers(ctx context.Context, errs chan<- error, whispers <-chan *Whis
 	go func() {
 		for {
 			cont := func() bool {
-                log.Println("[INFO]: waiting for next whisper to index...")
+				log.Println("[INFO]: waiting for next whisper to index...")
 				select {
 				case <-ctx.Done():
 					return false
@@ -307,7 +326,7 @@ func IndexWhispers(ctx context.Context, errs chan<- error, whispers <-chan *Whis
 					if !ok {
 						return false
 					}
-                    log.Println("[INFO]: retrieved whisper to index...")
+					log.Println("[INFO]: retrieved whisper to index...")
 
 					defer func() {
 						log.Printf("[INFO]: deleting file %s (cleanup)", whisper.Path)
@@ -349,10 +368,9 @@ func IndexWhispers(ctx context.Context, errs chan<- error, whispers <-chan *Whis
 							if errors.Is(err, io.EOF) {
 								break
 							}
-							errs <- err
 
 							log.Printf(
-								"[WARN]: reading csv failed, writing failed csv to failed-%s.csv",
+								"[WARN]: reading csv failed, writing failed csv to failed-%s.csv and skipping this failure",
 								whisper.VideoId,
 							)
 							fh, err := os.Open(whisper.Path)
@@ -375,6 +393,8 @@ func IndexWhispers(ctx context.Context, errs chan<- error, whispers <-chan *Whis
 								errs <- fmt.Errorf("writing failed csv: %w", err)
 								return false
 							}
+
+							return true
 						}
 
 						startMs, err := strconv.Atoi(row[0])

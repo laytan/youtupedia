@@ -29,6 +29,24 @@ func (q *Queries) Channel(ctx context.Context, id string) (Channel, error) {
 	return i, err
 }
 
+const countFailures = `-- name: CountFailures :one
+SELECT COUNT(*) FROM failures
+WHERE type = ?
+AND id > ?
+`
+
+type CountFailuresParams struct {
+	Type string
+	ID   int64
+}
+
+func (q *Queries) CountFailures(ctx context.Context, arg CountFailuresParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countFailures, arg.Type, arg.ID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createChannel = `-- name: CreateChannel :one
 INSERT INTO channels (
     id, title, videos_list_id, thumbnail_url
