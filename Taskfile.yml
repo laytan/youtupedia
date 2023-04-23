@@ -1,0 +1,62 @@
+# All requirements used in these tasks:
+#
+# Only works on unix based shells.
+#
+# - go (1.20+)
+# - ffmpeg
+# - yt-dlp
+# - whisper.cpp
+# - sqlc
+
+version: "3"
+
+vars:
+    GOOSE: ./bin/goose -dir internal/store/migrations sqlite3 ./db.sqlite
+
+tasks:
+    build:
+      deps: [build-youtupedia, build-goose]
+
+    build-youtupedia:
+        deps: [sqlc]
+        cmds:
+            - go build -o bin/youtupedia -ldflags="-s -w" cmd/youtupedia/main.go
+        sources:
+            - "**/*.go"
+            - go.mod
+            - go.sum
+        generates:
+            - bin/youtupedia
+
+    build-goose:
+        cmds:
+            - go build -o bin/goose -ldflags="-s -w" cmd/goose/main.go
+        sources:
+            - "cmd/goose/**/*.go"
+            - "internal/store/migrations/**/*.go"
+            - go.mod
+            - go.sum
+        generates:
+            - bin/goose
+
+    sqlc:
+        run: once
+        cmds:
+            - sqlc generate
+        sources:
+            - "internal/store/**/*"
+        generates:
+            - internal/store/queries.sql.go
+            - internal/store/db.go
+            - internal/store/models.go
+
+    goose:
+        deps: [build]
+        cmds:
+            - "{{.GOOSE}} {{.CLI_ARGS}}"
+
+    migrate:
+        deps: [build]
+        cmds:
+            - "{{.GOOSE}} up"
+

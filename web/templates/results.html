@@ -1,0 +1,34 @@
+<hr>
+<p>{{ len . }} matching videos</p>
+
+{{ $slice := . }}
+{{ if gt (len .) 100 }}
+    <p>only showing the first 100 results</p>
+    {{ $slice = slice . 0 100 }}
+{{ end }}
+
+<div>
+    {{ range $result := $slice }}
+    <hr>
+    <img style="max-width: 100%; margin: 0 auto; display: block; margin-bottom: 1rem;" src="{{ $result.Video.ThumbnailUrl }}" alt="">
+    <h2 style="margin: 0; font-size: 3rem;">{{ $result.Video.Title }}</h2>
+    <p>{{ $result.Video.PublishedAt }}</p>
+    <ul>
+        {{ range $transcript := $result.Results }}
+        {{ $url := printf "https://youtu.be/%s?t=%.f" $result.Video.ID $transcript.StartDuration.Seconds  }}
+        <li>
+            <a
+                target="_blank"
+                style="text-decoration: none;"
+                href="{{ $url }}"
+            >
+                at {{ $transcript.StartDuration }}
+            </a>
+            <blockquote cite="{{ $url }}">
+                {{ printf "%q" $transcript.Text }}
+            </blockquote>
+        </li>
+        {{ end }}
+    </ul>
+    {{ end }}
+</div>
