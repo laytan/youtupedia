@@ -231,6 +231,10 @@ const (
 	TypeManual
 )
 
+// NOTE: could use yt-dlp for this: `yt-dlp --write-subs --write-auto-subs --sub-format srv1 --sub-langs "en.*" --no-download "https://youtube.com/watch?v=asdad"`
+// I believe this outputs the same format and might be more reliable.
+// Can check stdout for message: "There's no subtitles for the requested languages", and return ErrNoCaptions.
+// One thing is you can't just say give me the best one, this will write every matching captions.
 func (c *Client) Captions(videoId string) (*Transcript, TranscriptType, error) {
 	res, err := http.Get(fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoId))
 	if err != nil {
@@ -387,18 +391,18 @@ func ParsePublishedTime(value string) (time.Time, error) {
 }
 
 // Returns the "best" track, which is an english track non automatic.
-// Then goes for non-english non-automatic,
 // Then for english automatic,
+// Then goes for non-english non-automatic,
 // Then for non-english automatic.
 func bestTrack(tracks []ResTrack) (*ResTrack, TranscriptType) {
 	for _, t := range tracks {
-		if t.LanguageCode == "en" && t.Kind != "asr" {
+		if strings.HasPrefix(t.LanguageCode, "en") && t.Kind != "asr" {
 			return &t, TypeManual
 		}
 	}
 
 	for _, t := range tracks {
-		if t.LanguageCode == "en" {
+		if strings.HasPrefix(t.LanguageCode, "en") {
 			return &t, TypeAuto
 		}
 	}
