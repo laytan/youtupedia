@@ -4,38 +4,25 @@ import (
 	"context"
 	"database/sql"
 	_ "embed"
-	"html/template"
 	"log"
-	"net/http"
 	"os"
-	"path/filepath"
-	"time"
 
 	"github.com/laytan/youtupedia/internal/failures"
 	"github.com/laytan/youtupedia/internal/index"
 	"github.com/laytan/youtupedia/internal/search"
 	"github.com/laytan/youtupedia/internal/store"
 	"github.com/laytan/youtupedia/internal/tube"
+	"github.com/laytan/youtupedia/internal/youtupedia"
 	_ "github.com/mattn/go-sqlite3"
-)
-
-const (
-	ServeChannel  = "UCsBjURrPoezykLs9EqgamOA"
-	TemplatesPath = "web/templates"
-	Port          = ":8080"
 )
 
 var (
 	queries *store.Queries
 	db      *sql.DB
 	yt      *tube.Client
-
-	templResults = template.Must(template.ParseFiles(filepath.Join(TemplatesPath, "results.html")))
-	ytKey        = os.Getenv("YT_KEY")
+	ytKey   = os.Getenv("YT_KEY")
 )
 
-// TODO: on startup, check if all channels in database are still up to date?
-// TODO: subscribe to uploads webhook, are captions available from minute one?
 func main() {
 	if ytKey == "" {
 		panic("YT_KEY environment variable must be set")
@@ -81,47 +68,7 @@ func main() {
 
 		log.Println("[INFO]: Finished failures processing")
 	} else {
-		http.Handle("/", http.FileServer(http.Dir("web/static")))
-
-		http.HandleFunc("/query", func(w http.ResponseWriter, r *http.Request) {
-			start := time.Now()
-			defer func() {
-				log.Printf("[INFO]: Search took %s", time.Since(start))
-			}()
-
-			query := r.URL.Query().Get("query")
-			if len(query) < 3 {
-				w.WriteHeader(http.StatusUnprocessableEntity)
-				_, _ = w.Write([]byte("Please type at least 3 characters"))
-				return
-			}
-
-			channel, err := index.Channel(ctx, ServeChannel)
-			if err != nil {
-				log.Printf("[ERROR]: retrieving channel %q: %v", ServeChannel, err)
-				w.WriteHeader(http.StatusUnprocessableEntity)
-				_, _ = w.Write([]byte("Could not find/retrieve channel to search for"))
-				return
-			}
-
-			log.Printf("[INFO]: searching for %q in %q", query, channel.Title)
-			res, err := search.Channel(ctx, channel, query)
-			if err != nil {
-				log.Printf("[ERROR]: searching through channel: %v", err)
-				w.WriteHeader(http.StatusInternalServerError)
-				_, _ = w.Write([]byte("Searching failed"))
-				return
-			}
-
-			if err := templResults.Execute(w, res); err != nil {
-				log.Printf("[ERROR]: executing results template: %v", err)
-				w.WriteHeader(http.StatusInternalServerError)
-				_, _ = w.Write([]byte("Populating results template failed"))
-				return
-			}
-		})
-
-		log.Printf("[INFO]: Listening on port %s", Port)
-		log.Println(http.ListenAndServe(Port, nil))
+		youtupedia.Queries = queries
+		youtupedia.Start(ctx)
 	}
 }

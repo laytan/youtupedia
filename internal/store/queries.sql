@@ -2,6 +2,9 @@
 SELECT * FROM channels
 WHERE id = ? LIMIT 1;
 
+-- name: Channels :many
+SELECT * FROM channels;
+
 -- name: CreateChannel :one
 INSERT INTO channels (
     id, title, videos_list_id, thumbnail_url

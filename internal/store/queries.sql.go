@@ -29,6 +29,40 @@ func (q *Queries) Channel(ctx context.Context, id string) (Channel, error) {
 	return i, err
 }
 
+const channels = `-- name: Channels :many
+SELECT id, title, videos_list_id, thumbnail_url, created_at, updated_at FROM channels
+`
+
+func (q *Queries) Channels(ctx context.Context) ([]Channel, error) {
+	rows, err := q.db.QueryContext(ctx, channels)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Channel
+	for rows.Next() {
+		var i Channel
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.VideosListID,
+			&i.ThumbnailUrl,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countFailures = `-- name: CountFailures :one
 SELECT COUNT(*) FROM failures
 WHERE type = ?
@@ -281,10 +315,12 @@ func (q *Queries) Transcript(ctx context.Context, id int64) (Transcript, error) 
 }
 
 const video = `-- name: Video :one
+
 SELECT id, channel_id, published_at, title, description, thumbnail_url, searchable_transcript, created_at, updated_at, transcript_type FROM videos
 WHERE id = ?
 `
 
+// Need second arg here because type is a reserved word in go.
 func (q *Queries) Video(ctx context.Context, id string) (Video, error) {
 	row := q.db.QueryRowContext(ctx, video, id)
 	var i Video

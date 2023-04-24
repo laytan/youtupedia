@@ -1,14 +1,12 @@
 <hr>
-<p>{{ len . }} matching videos</p>
+<p>Showing {{ len . }} matching videos.</p>
 
-{{ $slice := . }}
-{{ if gt (len .) 100 }}
-    <p>only showing the first 100 results</p>
-    {{ $slice = slice . 0 100 }}
+{{ if eq (len .) 100 }}
+    <p>Only showing the last 100 results, there may be more.</p>
 {{ end }}
 
 <div>
-    {{ range $result := $slice }}
+    {{ range $result := . }}
     <hr>
     <img style="max-width: 100%; margin: 0 auto; display: block; margin-bottom: 1rem;" src="{{ $result.Video.ThumbnailUrl }}" alt="">
     <h2 style="margin: 0; font-size: 3rem;">{{ $result.Video.Title }}</h2>
