@@ -26,6 +26,8 @@ var (
 // IndexChannel iterates through all videos of the given channel.
 // Calling IndexVideo on each of them.
 //
+// If the iteration gets to a video that is already indexed, ErrAlreadyIndexed is returned.
+//
 // If during this process, the YouTube quota is exceeded,
 // a store.Failure is created with type store.FailureTypePageQuota and the token of the failed page in its Data.
 //

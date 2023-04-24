@@ -7,6 +7,18 @@ import (
 )
 
 func StemLine(value string) string {
+    words := StemLineWords(value)
+
+	stemmed := strings.Builder{}
+	for _, word := range words {
+        stemmed.WriteString(word)
+		stemmed.WriteString(" ")
+	}
+
+	return stemmed.String()
+}
+
+func StemLineWords(value string) []string {
 	repper := strings.NewReplacer(
 		",", "",
 		".", "",
@@ -15,16 +27,18 @@ func StemLine(value string) string {
 		`\`, "",
 		"[", "",
 		"]", "",
+        "(", "",
+        ")", "",
+        "-", "",
+        ";", "",
+        "%", "",
 	)
 	noSpecial := repper.Replace(value)
-	words := strings.Fields(noSpecial)
+    words := strings.Fields(noSpecial)
 
-	stemmed := strings.Builder{}
-	for _, word := range words {
-		ws := string(porterstemmer.Stem([]rune(word)))
-		stemmed.WriteString(ws)
-		stemmed.WriteString(" ")
-	}
+    for i, word := range words {
+        words[i] = string(porterstemmer.Stem([]rune(word)))
+    }
 
-	return stemmed.String()
+    return words
 }

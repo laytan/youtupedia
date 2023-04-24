@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"fmt"
+	"log"
 	"sort"
 	"strconv"
 	"sync"
@@ -15,24 +16,27 @@ import (
 var (
 	Queries        *store.Queries
 	SearchRoutines = 20
+	MaxResults     = 100
 )
 
 type Result struct {
 	Video   store.Video
-	Results []store.Transcript
+	Results []*store.Transcript
+	ids     []int64
 }
 
 // Channel retrieves all the videos for the given channel, calling Video on each of them.
 // The results are sorted based on the published time of the video.
 func Channel(ctx context.Context, ch *store.Channel, query string) (res []Result, err error) {
-	videos, err := Queries.VideosOfChannel(
-		ctx,
-		ch.ID,
-	) // TODO: paginate or channel that fetches in chunks if this takes much memory?
+	// Retrieves the videos that contain all the words we query.
+	// These are optimistic matches, because they have to be in order,
+	// and they can span the metadata boundaries, and we have to return the exact part of the transcripts.
+	videos, err := Queries.VideosOfChannelWithWords(ctx, ch.ID, stem.StemLineWords(query))
 	if err != nil {
 		return nil, fmt.Errorf("retrieving channel videos: %w", err)
 	}
 
+	log.Printf("[INFO]: searching through %d optimistic video matches", len(videos))
 	var group errgroup.Group
 	group.SetLimit(SearchRoutines)
 	var mu sync.Mutex
@@ -44,25 +48,18 @@ func Channel(ctx context.Context, ch *store.Channel, query string) (res []Result
 				return fmt.Errorf("searching: %w", err)
 			}
 
-			tsc := make([]store.Transcript, 0, len(results))
-			for _, r := range results {
-				ts, err := Queries.Transcript(ctx, r)
-				if err != nil {
-					return fmt.Errorf("fetching transcript: %w", err)
-				}
-
-				tsc = append(tsc, ts)
+			if len(results) == 0 {
+				return nil
 			}
 
-			if len(results) > 0 {
-				mu.Lock()
-				defer mu.Unlock()
-				res = append(res, Result{
-					Video:   vid,
-					Results: tsc,
-				})
-			}
+			mu.Lock()
+			defer mu.Unlock()
 
+			res = append(res, Result{
+				Video:   vid,
+				Results: nil,
+				ids:     results,
+			})
 			return nil
 		})
 	}
@@ -71,8 +68,33 @@ func Channel(ctx context.Context, ch *store.Channel, query string) (res []Result
 	}
 
 	sort.Slice(res, func(i, j int) bool {
-		return res[i].Video.PublishedAt.Before(res[j].Video.PublishedAt)
+		return res[j].Video.PublishedAt.Before(res[i].Video.PublishedAt)
 	})
+
+	log.Printf("[INFO]: there were %d actual video matches, capping to %d", len(res), MaxResults)
+	if len(res) > MaxResults {
+		res = res[:MaxResults]
+	}
+
+	all := make([]int64, 0, len(res))
+	for _, r := range res {
+		all = append(all, r.ids...)
+	}
+
+	log.Printf("[INFO]: retrieving %d matched captions/lines", len(all))
+	ts, err := Queries.TranscriptsByIds(ctx, all)
+	if err != nil {
+		return nil, fmt.Errorf("querying transcripts: %w", err)
+	}
+
+	for i := range res {
+		rs := make([]*store.Transcript, len(res[i].ids))
+		for j, id := range res[i].ids {
+			rs[j] = ts[id]
+		}
+		res[i].ids = nil
+		res[i].Results = rs
+	}
 
 	return res, nil
 }
@@ -88,38 +110,30 @@ func Channel(ctx context.Context, ch *store.Channel, query string) (res []Result
 // If the match is on the boundary of a transcript (so part is on transcript/line 1 and other part on 2),
 // The second transcript's ID is returned.
 func Video(vid *store.Video, query string) (res []int64, err error) {
-	var curr int64
 	var inMeta bool
 	var matching int
-	var ids int
+	var idStart int
+	var idEnd int
 	runes := []rune(stem.StemLine(query))
 	for i, ch := range vid.SearchableTranscript {
 		if matching == len(runes) {
-			res = append(res, curr)
+			id, err := strconv.ParseInt(vid.SearchableTranscript[idStart:idEnd], 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("could not parse id string: %w", err)
+			}
+
+			res = append(res, id)
 			matching = 0
 		}
 
 		if ch == '~' {
 			if inMeta {
 				inMeta = false
-
-				id, err := strconv.ParseInt(vid.SearchableTranscript[ids+1:i], 10, 64)
-				if err != nil {
-					return nil, fmt.Errorf("could not parse id string: %w", err)
-				}
-				curr = id
-
-				// Treat as space, because the captions would be split like that.
-				if runes[matching] == ' ' {
-					matching++
-				} else {
-					matching = 0
-				}
+				idEnd = i
 			} else {
 				inMeta = true
-				ids = i
+				idStart = i + 1
 			}
-
 			continue
 		}
 
