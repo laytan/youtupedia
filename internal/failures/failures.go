@@ -30,8 +30,10 @@ var (
 
 	WhisperModelPath  = "../whisper.cpp/models/ggml-base.en.bin"
 	WhisperThreads    = "1"
-	WhisperProcessors = strconv.Itoa(runtime.NumCPU() - 1) // Keep 1 processor for non-whisper stuff.
-	BinWhisperCpp     = "../whisper.cpp/main"
+	WhisperProcessors = strconv.Itoa(
+		runtime.NumCPU() - 1,
+	) // Keep 1 processor for non-whisper stuff.
+	BinWhisperCpp = "../whisper.cpp/main"
 
 	BinFfmpeg = "ffmpeg"
 	BinYtDlp  = "yt-dlp"
@@ -169,6 +171,8 @@ func DownloadFailures(
 					cmd := exec.CommandContext(
 						ctx,
 						BinYtDlp,
+                        "-f",
+                        "bestaudio",
 						"--ignore-config",
 						"--no-progress",
 						"--output",
@@ -176,10 +180,7 @@ func DownloadFailures(
 						"--extract-audio",
 						"--audio-format",
 						"wav",
-						"--default-search",
-						"ytsearch",
-						"--",
-						videoId,
+                        "https://youtube.com/watch?v=" + videoId,
 					)
 					dlStdout := &bytes.Buffer{}
 					cmd.Stdout = dlStdout // Need to capture stdout for error messages, for some reasons errors are shown on stdout.
@@ -370,8 +371,9 @@ func IndexWhispers(ctx context.Context, errs chan<- error, whispers <-chan *Whis
 							}
 
 							log.Printf(
-								"[WARN]: reading csv failed, writing failed csv to failed-%s.csv and skipping this failure",
+								"[WARN]: reading csv failed, writing failed csv to failed-%s.csv and skipping this failure: %v",
 								whisper.VideoId,
+								err,
 							)
 							fh, err := os.Open(whisper.Path)
 							if err != nil {
