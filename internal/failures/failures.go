@@ -362,6 +362,26 @@ func IndexWhispers(ctx context.Context, errs chan<- error, whispers <-chan *Whis
 					defer tx.Rollback() // Rollback, ignore error which is returned if tx is committed.
 					qtx := Queries.WithTx(tx)
 
+					published, err := tube.ParsePublishedTime(whisper.Video.Snippet.PublishedAt)
+					if err != nil {
+						errs <- fmt.Errorf("parsing video published: %w", err)
+						return false
+					}
+
+					if err = qtx.CreateVideo(ctx, store.CreateVideoParams{
+						ID:                   whisper.VideoId,
+						ChannelID:            whisper.Video.Snippet.ChannelId,
+						PublishedAt:          published,
+						Title:                whisper.Video.Snippet.Title,
+						Description:          whisper.Video.Snippet.Description,
+						ThumbnailUrl:         tube.HighestResThumbnail(whisper.Video.Snippet.Thumbnails).Url,
+						SearchableTranscript: "",
+						TranscriptType:       string(store.WhisperBase),
+					}); err != nil {
+						errs <- fmt.Errorf("creating video: %w", err)
+						return false
+					}
+
 					searchable := strings.Builder{}
 					for {
 						row, err := r.Read()
@@ -427,7 +447,7 @@ func IndexWhispers(ctx context.Context, errs chan<- error, whispers <-chan *Whis
 						id, err := qtx.CreateTranscript(ctx, store.CreateTranscriptParams{
 							VideoID:  whisper.VideoId,
 							Start:    float64(startMs) / 1000,
-							Duration: float64(durMs) / 1000,
+							Duration: float32(durMs) / 1000,
 							Text:     txt,
 						})
 						if err != nil {
@@ -439,25 +459,12 @@ func IndexWhispers(ctx context.Context, errs chan<- error, whispers <-chan *Whis
 						searchable.WriteString(stem.StemLine(txt))
 					}
 
-					published, err := tube.ParsePublishedTime(whisper.Video.Snippet.PublishedAt)
-					if err != nil {
-						errs <- fmt.Errorf("parsing video published: %w", err)
-						return false
-					}
-
-					if err = qtx.CreateVideo(ctx, store.CreateVideoParams{
-						ID:                   whisper.VideoId,
-						ChannelID:            whisper.Video.Snippet.ChannelId,
-						PublishedAt:          published,
-						Title:                whisper.Video.Snippet.Title,
-						Description:          whisper.Video.Snippet.Description,
-						ThumbnailUrl:         tube.HighestResThumbnail(whisper.Video.Snippet.Thumbnails).Url,
-						SearchableTranscript: searchable.String(),
-						TranscriptType:       string(store.WhisperBase),
-					}); err != nil {
-						errs <- fmt.Errorf("creating video: %w", err)
-						return false
-					}
+                    if err := qtx.SetSearchableTranscript(ctx, store.SetSearchableTranscriptParams{
+                    	ID:                   whisper.VideoId,
+                    	SearchableTranscript: searchable.String(),
+                    }); err != nil {
+                            errs <- fmt.Errorf("updating transcript: %w", err)
+                    }
 
 					if err := qtx.DeleteFailure(ctx, whisper.FailureId); err != nil {
 						errs <- fmt.Errorf("deleting indexed failure: %w", err)

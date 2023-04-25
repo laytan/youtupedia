@@ -84,6 +84,11 @@ func IndexChannel(ctx context.Context, channel *store.Channel) error {
 								err,
 							)
 						}
+						log.Printf(
+							"[INFO]: indexed %q - %q",
+							vid.ContentDetails.VideoId,
+							vid.Snippet.Title,
+						)
 
 						return nil
 					}
@@ -92,6 +97,7 @@ func IndexChannel(ctx context.Context, channel *store.Channel) error {
 
 			if err := group.Wait(); err != nil {
 				if errors.Is(err, ErrAlreadyIndexed) {
+					// TODO: this also cancels in progress indexing of non-indexed items.
 					log.Printf("[INFO]: found already indexed video, stopping this: %v", err)
 					return false, nil
 				} else {
@@ -148,23 +154,6 @@ func IndexVideo(ctx context.Context, channelId string, video tube.PlaylistItem) 
 
 	qtx := Queries.WithTx(tx)
 
-	searchable := strings.Builder{}
-	for _, entry := range captions.Entries {
-		txt := html.UnescapeString(entry.Text)
-		id, err := qtx.CreateTranscript(ctx, store.CreateTranscriptParams{
-			VideoID:  videoId,
-			Start:    entry.Start,
-			Duration: float64(entry.Dur),
-			Text:     txt,
-		})
-		if err != nil {
-			return fmt.Errorf("inserting caption %v: %w", entry, err)
-		}
-
-		searchable.WriteString(fmt.Sprintf("~%d~", id))
-		searchable.WriteString(stem.StemLine(txt))
-	}
-
 	published, err := tube.ParsePublishedTime(video.ContentDetails.VideoPublishedAt)
 	if err != nil {
 		return err
@@ -180,18 +169,41 @@ func IndexVideo(ctx context.Context, channelId string, video tube.PlaylistItem) 
 		panic("unreachable")
 	}
 
-	err = qtx.CreateVideo(ctx, store.CreateVideoParams{
+	if err = qtx.CreateVideo(ctx, store.CreateVideoParams{
 		ID:                   videoId,
 		ChannelID:            channelId,
 		PublishedAt:          published,
 		Title:                video.Snippet.Title,
 		Description:          video.Snippet.Description,
 		ThumbnailUrl:         tube.HighestResThumbnail(video.Snippet.Thumbnails).Url,
-		SearchableTranscript: searchable.String(),
+		SearchableTranscript: "",
 		TranscriptType:       string(t),
-	})
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("creating video %q: %w", videoId, err)
+	}
+
+	searchable := strings.Builder{}
+	for _, entry := range captions.Entries {
+		txt := html.UnescapeString(entry.Text)
+		id, err := qtx.CreateTranscript(ctx, store.CreateTranscriptParams{
+			VideoID:  videoId,
+			Start:    entry.Start,
+			Duration: entry.Dur,
+			Text:     txt,
+		})
+		if err != nil {
+			return fmt.Errorf("inserting caption %v: %w", entry, err)
+		}
+
+		searchable.WriteString(fmt.Sprintf("~%d~", id))
+		searchable.WriteString(stem.StemLine(txt))
+	}
+
+	if err = qtx.SetSearchableTranscript(ctx, store.SetSearchableTranscriptParams{
+		ID:                   videoId,
+		SearchableTranscript: searchable.String(),
+	}); err != nil {
+		return fmt.Errorf("setting searchable transcript: %w", err)
 	}
 
 	if err = tx.Commit(); err != nil {
