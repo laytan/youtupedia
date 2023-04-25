@@ -30,7 +30,7 @@ type Transcript struct {
 	ID        int64
 	VideoID   string
 	Start     float64
-	Duration  float64
+	Duration  float32
 	Text      string
 	CreatedAt time.Time
 	UpdatedAt time.Time

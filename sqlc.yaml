@@ -1,6 +1,6 @@
 version: 2
 sql:
-  - engine: sqlite
+  - engine: postgresql
     schema: internal/store/migrations
     queries: internal/store/queries.sql
     gen:

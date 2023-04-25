@@ -21,7 +21,7 @@ var (
 
 type Result struct {
 	Video   store.Video
-	Results []*store.Transcript
+	Results []store.Transcript
 	ids     []int64
 }
 
@@ -76,6 +76,8 @@ func Channel(ctx context.Context, ch *store.Channel, query string) (res []Result
 		res = res[:MaxResults]
 	}
 
+	// Flatten all resulting transcripts into one slice of ids,
+	// so we can do 1 query for all transcripts.
 	all := make([]int64, 0, len(res))
 	for _, r := range res {
 		all = append(all, r.ids...)
@@ -87,13 +89,13 @@ func Channel(ctx context.Context, ch *store.Channel, query string) (res []Result
 		return nil, fmt.Errorf("querying transcripts: %w", err)
 	}
 
+	// The results from the query are in the same order of the given ids to the query.
+	// So, because its ordered, we can do the following to efficiently put them back
+	// with the video that they belong.
+	var curr int
 	for i := range res {
-		rs := make([]*store.Transcript, len(res[i].ids))
-		for j, id := range res[i].ids {
-			rs[j] = ts[id]
-		}
-		res[i].ids = nil
-		res[i].Results = rs
+		res[i].Results = ts[curr : curr+len(res[i].ids)]
+		curr += len(res[i].ids)
 	}
 
 	return res, nil

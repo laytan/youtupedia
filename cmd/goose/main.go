@@ -8,7 +8,7 @@ import (
 	"os"
 
 	_ "github.com/laytan/youtupedia/internal/store/migrations"
-	_ "github.com/mattn/go-sqlite3"
+    _ "github.com/lib/pq"
 	"github.com/pressly/goose/v3"
 )
 
@@ -28,7 +28,7 @@ func main() {
 
 	dbstring, command := args[1], args[2]
 
-	db, err := goose.OpenDBWithDriver("sqlite3", dbstring)
+	db, err := goose.OpenDBWithDriver("postgres", dbstring)
 	if err != nil {
 		log.Fatalf("goose: failed to open DB: %v\n", err)
 	}

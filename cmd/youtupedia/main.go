@@ -13,7 +13,7 @@ import (
 	"github.com/laytan/youtupedia/internal/store"
 	"github.com/laytan/youtupedia/internal/tube"
 	"github.com/laytan/youtupedia/internal/youtupedia"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/lib/pq"
 )
 
 var (
@@ -21,6 +21,7 @@ var (
 	db      *sql.DB
 	yt      *tube.Client
 	ytKey   = os.Getenv("YT_KEY")
+	pgDsn   = os.Getenv("POSTGRES_DSN")
 )
 
 func main() {
@@ -28,8 +29,12 @@ func main() {
 		panic("YT_KEY environment variable must be set")
 	}
 
+	if pgDsn == "" {
+		panic("POSTGRES_DSN environment variable must be set")
+	}
+
 	ctx := context.Background()
-	d, err := sql.Open("sqlite3", "db.sqlite")
+	d, err := sql.Open("postgres", pgDsn)
 	if err != nil {
 		log.Fatalf("[ERROR]: opening database: %v", err)
 	}

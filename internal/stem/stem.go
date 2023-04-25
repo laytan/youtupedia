@@ -19,19 +19,18 @@ func StemLine(value string) string {
 }
 
 func StemLineWords(value string) []string {
-	repper := strings.NewReplacer(
+    repper := strings.NewReplacer( // TODO: maybe just replace all non-alpha?
 		",", "",
 		".", "",
 		"!", "",
+        "?", "",
 		`"`, "",
 		`\`, "",
 		"[", "",
 		"]", "",
         "(", "",
         ")", "",
-        "-", "",
-        ";", "",
-        "%", "",
+        "~", "",
 	)
 	noSpecial := repper.Replace(value)
     words := strings.Fields(noSpecial)

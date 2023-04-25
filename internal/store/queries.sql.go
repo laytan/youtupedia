@@ -8,11 +8,14 @@ package store
 import (
 	"context"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 const channel = `-- name: Channel :one
 SELECT id, title, videos_list_id, thumbnail_url, created_at, updated_at FROM channels
-WHERE id = ? LIMIT 1
+WHERE id = $1
+LIMIT 1
 `
 
 func (q *Queries) Channel(ctx context.Context, id string) (Channel, error) {
@@ -65,8 +68,8 @@ func (q *Queries) Channels(ctx context.Context) ([]Channel, error) {
 
 const countFailures = `-- name: CountFailures :one
 SELECT COUNT(*) FROM failures
-WHERE type = ?
-AND id > ?
+WHERE type = $1
+AND id > $2
 `
 
 type CountFailuresParams struct {
@@ -85,7 +88,7 @@ const createChannel = `-- name: CreateChannel :one
 INSERT INTO channels (
     id, title, videos_list_id, thumbnail_url
 ) VALUES (
-    ?,  ?,     ?,              ?
+    $1, $2,    $3,             $4
 )
 RETURNING id, title, videos_list_id, thumbnail_url, created_at, updated_at
 `
@@ -120,7 +123,7 @@ const createFailure = `-- name: CreateFailure :exec
 INSERT INTO failures (
     channel_id, data, type
 ) VALUES (
-    ?,          ?,    ?
+    $1,          $2,    $3
 )
 `
 
@@ -139,7 +142,7 @@ const createTranscript = `-- name: CreateTranscript :one
 INSERT INTO transcripts (
     video_id, start, duration, text
 ) VALUES (
-    ?,        ?,     ?,        ?
+    $1,        $2,     $3,        $4
 )
 RETURNING id
 `
@@ -147,7 +150,7 @@ RETURNING id
 type CreateTranscriptParams struct {
 	VideoID  string
 	Start    float64
-	Duration float64
+	Duration float32
 	Text     string
 }
 
@@ -167,7 +170,7 @@ const createVideo = `-- name: CreateVideo :exec
 INSERT INTO videos (
     id, channel_id, published_at, title, description, thumbnail_url, searchable_transcript, transcript_type
 ) VALUES (
-    ?,  ?,          ?,            ?,     ?,           ?,             ?,                     ?
+    $1,  $2,          $3,            $4,     $5,           $6,             $7,                     $8
 )
 `
 
@@ -198,7 +201,7 @@ func (q *Queries) CreateVideo(ctx context.Context, arg CreateVideoParams) error 
 
 const deleteFailure = `-- name: DeleteFailure :exec
 DELETE FROM failures
-WHERE id = ?
+WHERE id = $1
 `
 
 func (q *Queries) DeleteFailure(ctx context.Context, id int64) error {
@@ -208,7 +211,7 @@ func (q *Queries) DeleteFailure(ctx context.Context, id int64) error {
 
 const lastVideo = `-- name: LastVideo :one
 SELECT id, channel_id, published_at, title, description, thumbnail_url, searchable_transcript, created_at, updated_at, transcript_type FROM videos
-WHERE channel_id = ?
+WHERE channel_id = $1
 ORDER BY published_at
 DESC LIMIT 1
 `
@@ -233,8 +236,8 @@ func (q *Queries) LastVideo(ctx context.Context, channelID string) (Video, error
 
 const nextFailure = `-- name: NextFailure :one
 SELECT id, channel_id, data, type, created_at, updated_at FROM failures
-WHERE id > ?
-AND type = ?
+WHERE id > $1
+AND type = $2
 ORDER BY id ASC
 LIMIT 1
 `
@@ -260,7 +263,7 @@ func (q *Queries) NextFailure(ctx context.Context, arg NextFailureParams) (Failu
 
 const noCaptionFailures = `-- name: NoCaptionFailures :many
 SELECT id, channel_id, data, type, created_at, updated_at FROM failures
-WHERE channel_id = ?
+WHERE channel_id = $1
 AND type = "no_captions"
 `
 
@@ -294,9 +297,25 @@ func (q *Queries) NoCaptionFailures(ctx context.Context, channelID string) ([]Fa
 	return items, nil
 }
 
+const setSearchableTranscript = `-- name: SetSearchableTranscript :exec
+UPDATE videos
+SET searchable_transcript = $2
+WHERE id = $1
+`
+
+type SetSearchableTranscriptParams struct {
+	ID                   string
+	SearchableTranscript string
+}
+
+func (q *Queries) SetSearchableTranscript(ctx context.Context, arg SetSearchableTranscriptParams) error {
+	_, err := q.db.ExecContext(ctx, setSearchableTranscript, arg.ID, arg.SearchableTranscript)
+	return err
+}
+
 const transcript = `-- name: Transcript :one
 SELECT id, video_id, start, duration, text, created_at, updated_at FROM transcripts
-WHERE id = ?
+WHERE id = $1
 `
 
 func (q *Queries) Transcript(ctx context.Context, id int64) (Transcript, error) {
@@ -314,10 +333,46 @@ func (q *Queries) Transcript(ctx context.Context, id int64) (Transcript, error) 
 	return i, err
 }
 
+const transcriptsByIds = `-- name: TranscriptsByIds :many
+SELECT id, video_id, start, duration, text, created_at, updated_at FROM transcripts
+WHERE id = ANY($1::bigint[])
+`
+
+func (q *Queries) TranscriptsByIds(ctx context.Context, ids []int64) ([]Transcript, error) {
+	rows, err := q.db.QueryContext(ctx, transcriptsByIds, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Transcript
+	for rows.Next() {
+		var i Transcript
+		if err := rows.Scan(
+			&i.ID,
+			&i.VideoID,
+			&i.Start,
+			&i.Duration,
+			&i.Text,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const video = `-- name: Video :one
 
 SELECT id, channel_id, published_at, title, description, thumbnail_url, searchable_transcript, created_at, updated_at, transcript_type FROM videos
-WHERE id = ?
+WHERE id = $1
 `
 
 // Need second arg here because type is a reserved word in go.
@@ -341,7 +396,7 @@ func (q *Queries) Video(ctx context.Context, id string) (Video, error) {
 
 const videosOfChannel = `-- name: VideosOfChannel :many
 SELECT id, channel_id, published_at, title, description, thumbnail_url, searchable_transcript, created_at, updated_at, transcript_type FROM videos
-WHERE channel_id = ?
+WHERE channel_id = $1
 `
 
 func (q *Queries) VideosOfChannel(ctx context.Context, channelID string) ([]Video, error) {

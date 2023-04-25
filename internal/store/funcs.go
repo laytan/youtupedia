@@ -3,71 +3,12 @@ package store
 import (
 	"context"
 	"log"
+	"strconv"
 	"time"
 )
 
 func (t *Transcript) StartDuration() time.Duration {
 	return time.Duration(t.Start) * time.Second
-}
-
-// TranscriptsByIds is an optimized implementation to retrieve a lot of transcripts by their ID's.
-func (q *Queries) TranscriptsByIds(
-	ctx context.Context,
-	ids []int64,
-) (map[int64]*Transcript, error) {
-	if len(ids) == 0 {
-		return nil, nil
-	}
-
-    start := time.Now()
-    defer func() {
-        log.Printf("[INFO]: transcripts query took %s", time.Since(start))
-    }()
-
-	query := "SELECT * FROM transcripts WHERE id IN ("
-	for i := range ids {
-		query += "?"
-
-		if i == len(ids)-1 {
-			query += ");"
-		} else {
-			query += ","
-		}
-	}
-
-	ifs := make([]interface{}, len(ids))
-	for i := range ids {
-		ifs[i] = ids[i]
-	}
-
-	rows, err := q.db.QueryContext(ctx, query, ifs...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := make(map[int64]*Transcript, len(ids))
-	for rows.Next() {
-		var i Transcript
-		if err := rows.Scan(
-			&i.ID,
-			&i.VideoID,
-			&i.Start,
-			&i.Duration,
-			&i.Text,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items[i.ID] = &i
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 // VideosOfChannelWithWords is an optimized query to retrieve videos that
@@ -81,20 +22,22 @@ func (q *Queries) VideosOfChannelWithWords(
 		return nil, nil
 	}
 
-    start := time.Now()
-    defer func() {
-        log.Printf("[INFO]: videos query took %s", time.Since(start))
-    }()
+	start := time.Now()
+	defer func() {
+		log.Printf("[INFO]: videos query took %s", time.Since(start))
+	}()
 
-	query := "SELECT * FROM videos WHERE channel_id = ?"
-	for _, word := range words {
-		// NOTE: this would be dangerous for sql injection, but stemming removes all the special characters that
-        // are able to do that already, so this should be save.
-		query += " AND searchable_transcript LIKE \"%" + word + "%\""
+	ifs := make([]interface{}, len(words)+1)
+	ifs[0] = channelID
+
+	query := "SELECT * FROM videos WHERE channel_id = $1 AND searchable_transcript LIKE '%' "
+	for i, word := range words {
+		query += "|| $" + strconv.Itoa(i+2) + " || '%' "
+		ifs[i+1] = word
 	}
 	query += ";"
 
-	rows, err := q.db.QueryContext(ctx, query, channelID)
+	rows, err := q.db.QueryContext(ctx, query, ifs...)
 	if err != nil {
 		return nil, err
 	}
