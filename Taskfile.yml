@@ -11,7 +11,7 @@
 version: "3"
 
 vars:
-    GOOSE: ./bin/goose -dir internal/store/migrations sqlite3 ./db.sqlite
+    GOOSE: ./bin/goose -dir "internal/store/migrations" postgres $POSTGRES_DSN
 
 tasks:
     build:

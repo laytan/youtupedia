@@ -39,6 +39,16 @@ var (
 	BinYtDlp  = "yt-dlp"
 )
 
+func init() {
+    if wp, ok := os.LookupEnv("WHISPER_BIN"); ok {
+        BinWhisperCpp = wp
+    }
+
+    if mp, ok := os.LookupEnv("WHISPER_MODEL"); ok {
+        WhisperModelPath = mp
+    }
+}
+
 func WhisperNoCaptionFailures(ctx context.Context) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	signals := make(chan os.Signal, 1)
