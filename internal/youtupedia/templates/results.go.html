@@ -1,11 +1,12 @@
+{{ define "results" }}
 <hr>
 <p>Showing {{ len . }} matching videos.</p>
 
-{{ if eq (len .) 100 }}
-    <p>Only showing the last 100 results, there may be more.</p>
+{{ if eq (len . ) 100 }}
+<p>Only showing the last 100 results, there may be more.</p>
 {{ end }}
 
-<div>
+<div class="grid grid-cols-3">
     {{ range $result := . }}
     <hr>
     <img style="max-width: 100%; margin: 0 auto; display: block; margin-bottom: 1rem;" src="{{ $result.Video.ThumbnailUrl }}" alt="">
@@ -19,14 +20,15 @@
                 target="_blank"
                 style="text-decoration: none;"
                 href="{{ $url }}"
-            >
+                >
                 at {{ $transcript.StartDuration }}
             </a>
-            <blockquote cite="{{ $url }}">
-                {{ printf "%q" $transcript.Text }}
-            </blockquote>
+                <blockquote cite="{{ $url }}">
+                    {{ printf "%q" $transcript.Text }}
+                </blockquote>
         </li>
         {{ end }}
     </ul>
     {{ end }}
 </div>
+{{ end }}

@@ -1,0 +1,22 @@
+{{ define "layout" }}
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>{{ template "title" . }} | Youtupedia</title>
+        <meta name="description" content="{{ block "description" . }}Find exactly what you're looking for, on Youtupedia you search through the captions of your favourite YouTube channels, making it easy to find specific references, hidden gems and uncover new insights. Come have a search!{{ end }}">
+
+        <meta name="keywords" content="Youtupedia, YouTube, subtitles, captions, search captions, search YouTube captions, search, find, query, references, YouTube stats, YouTube references">
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="/style.css">
+    </head>
+    <body>
+        <main>
+            {{embed}}
+        </main>
+    </body>
+    <footer>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/htmx/1.9.0/htmx.min.js" integrity="sha512-+w1WYSgxzYpQuYBFPKusU5/k7MHat9SA7OqeugUomdCCkOR9reE0pBgAPDoAxYR2dQx+1++3eu76Wt3E83bmNQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    </footer>
+</html>
+{{ end }}

@@ -6,19 +6,21 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
-	"html/template"
 	"io/fs"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/template/html"
 	"github.com/laytan/youtupedia/internal/index"
 	"github.com/laytan/youtupedia/internal/search"
 	"github.com/laytan/youtupedia/internal/store"
 )
 
 const (
-	ServeChannel = "UCFKDEp9si4RmHFWJW1vYsMA"
+	ServeChannel = "UCd3dNckv1Za2coSaHGHl5aA"
 	Port         = ":8080"
 	CheckTime    = time.Hour
 )
@@ -26,75 +28,100 @@ const (
 var (
 	Queries *store.Queries
 
-	//go:embed static
-	_staticFS embed.FS
-	staticFS  fs.FS
 	//go:embed templates
 	_templatesFS embed.FS
-
-	templResults *template.Template
+	templatesFS  fs.FS
 )
 
-func init() {
-	newStaticFS, err := fs.Sub(_staticFS, "static")
-	if err != nil {
-		panic(err)
-	}
-	staticFS = newStaticFS
+type IndexData struct {
+	Channels []store.Channel
+}
 
+type ChannelData struct {
+	Channel store.Channel
+	Results []search.Result
+	IsQuery bool
+	Query   string
+}
+
+func init() {
 	subTemplatesFS, err := fs.Sub(_templatesFS, "templates")
 	if err != nil {
 		panic(err)
 	}
-
-	templResults = template.Must(template.ParseFS(subTemplatesFS, "results.html"))
+	templatesFS = subTemplatesFS
 }
 
 func Start(ctx context.Context) {
-	go periodicallyCheckNewUploads(ctx)
+	engine := html.NewFileSystem(http.FS(templatesFS), "")
+    engine.Debug(true)
+    engine.Reload(true)
 
-	http.Handle("/", http.FileServer(http.FS(staticFS)))
-
-	http.HandleFunc("/query", func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		defer func() {
-			log.Printf("[INFO]: Search took %s", time.Since(start))
-		}()
-
-		query := r.URL.Query().Get("query")
-		if len(query) < 3 {
-			w.WriteHeader(http.StatusUnprocessableEntity)
-			_, _ = w.Write([]byte("Please type at least 3 characters"))
-			return
-		}
-
-		channel, err := index.Channel(ctx, ServeChannel)
-		if err != nil {
-			log.Printf("[ERROR]: retrieving channel %q: %v", ServeChannel, err)
-			w.WriteHeader(http.StatusUnprocessableEntity)
-			_, _ = w.Write([]byte("Could not find/retrieve channel to search for"))
-			return
-		}
-
-		log.Printf("[INFO]: searching for %q in %q", query, channel.Title)
-		res, err := search.Channel(ctx, channel, query)
-		if err != nil {
-			log.Printf("[ERROR]: searching through channel: %v", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = w.Write([]byte("Searching failed"))
-			return
-		}
-
-		if err := templResults.Execute(w, res); err != nil {
-			log.Printf("[ERROR]: executing results template: %v", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = w.Write([]byte("Populating results template failed"))
-			return
-		}
+	app := fiber.New(fiber.Config{
+		Views: engine,
+        ViewsLayout: "layout",
 	})
 
-	log.Printf("[INFO]: Listening on port %s", Port)
-	log.Println(http.ListenAndServe(Port, nil))
+	// go periodicallyCheckNewUploads(ctx)
+
+	// TODO: can this be static?
+	app.Static("/", "internal/youtupedia/static")
+
+	app.Get("/", func(c *fiber.Ctx) error {
+		channels, err := Queries.Channels(ctx)
+		if err != nil {
+			log.Println(err)
+			c.Status(http.StatusInternalServerError)
+			return nil
+		}
+
+		return c.Render("index", IndexData{Channels: channels})
+	})
+
+	app.Get("/@:url", func(c *fiber.Ctx) error {
+		var data ChannelData
+		channel, err := Queries.ChannelByUrl(ctx, "@"+c.Params("url"))
+		if err != nil {
+			return fmt.Errorf("retrieving channel: %w", err)
+		}
+		data.Channel = channel
+
+		_, isHtmx := c.GetReqHeaders()["Hx-Request"]
+
+		query := c.Query("q")
+		if query == "" {
+			if isHtmx {
+				return c.Render("results", data.Results)
+			}
+
+			return c.Render("channel", data)
+		}
+
+		if len(query) < 3 {
+			return fiber.NewError(
+				http.StatusUnprocessableEntity,
+				"Please type at least 3 characters",
+			)
+		}
+		data.Query = strings.Clone(query)
+
+		log.Printf("[INFO]: searching for %q in %q", query, channel.Title)
+		res, err := search.Channel(ctx, &channel, query)
+		if err != nil {
+			log.Printf("[ERROR]: %v", err)
+			return fiber.NewError(http.StatusInternalServerError, "search failed")
+		}
+
+		data.Results = res
+		data.IsQuery = true
+
+		if isHtmx {
+			return c.Render("results", data.Results)
+		}
+		return c.Render("channel", data)
+	})
+
+	log.Fatal(app.Listen(Port))
 }
 
 // NOTE: maybe could do webhooks, like a checkNewUploads, followed by subscribing to the webhooks for the channels.

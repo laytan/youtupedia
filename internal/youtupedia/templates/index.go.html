@@ -1,0 +1,23 @@
+{{ define "title" }}Search YouTube through captions{{ end }}
+
+{{ define "index" }}
+<h1 class="text-3xl">Youtupedia</h1>
+
+<p>What channel would you like to search through?</p>
+
+<p>Is your favorite channel not here yet? <a href="https://github.com/laytan/youtupedia/issues">request indexing here!</a></p>
+
+<div class="grid grid-cols-3">
+    {{ range $channel := .Channels }}
+    <div>
+        <img
+        class=""
+        src="{{ $channel.ThumbnailUrl }}"
+        alt="{{ $channel.Title }} logo"
+        >
+        {{ $channel.Title }}
+        <a href="/{{ $channel.CustomUrl }}">Start searching</a>
+    </div>
+    {{ end }}
+</div>
+{{ end }}

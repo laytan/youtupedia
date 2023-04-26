@@ -1,21 +1,13 @@
-# All requirements used in these tasks:
-#
-# Only works on unix based shells.
-#
-# - go (1.20+)
-# - ffmpeg
-# - yt-dlp
-# - whisper.cpp
-# - sqlc
-
 version: "3"
 
+dotenv: ['.env']
+
 vars:
-    GOOSE: ./bin/goose -dir "internal/store/migrations" postgres $POSTGRES_DSN
+    GOOSE: ./bin/goose -dir "internal/store/migrations" postgres "$POSTGRES_DSN"
 
 tasks:
     build:
-      deps: [build-youtupedia, build-goose]
+      deps: [build-youtupedia, build-goose, style]
 
     build-youtupedia:
         deps: [sqlc]
@@ -59,4 +51,29 @@ tasks:
         deps: [build]
         cmds:
             - "{{.GOOSE}} up"
+
+    style:
+      dir: internal/youtupedia
+      cmds:
+        - npx tailwindcss -i style.css -o static/style.css
+      sources:
+        - style.css
+      generates:
+        - static/style.css
+
+    dev:
+      deps: [dev-sql, dev-style, dev-go]
+
+    dev-sql:
+      cmds:
+        - task sqlc -w
+
+    dev-style:
+      dir: internal/youtupedia
+      cmds:
+        - npx tailwindcss -i style.css -o static/style.css -w
+
+    dev-go:
+      cmds:
+        - gow -e=go,mod,sum,html run cmd/youtupedia/main.go
 

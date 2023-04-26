@@ -1,0 +1,22 @@
+{{ define "title" }}
+    {{ if .IsQuery }}
+        {{ printf "Search %q in %'s captions" .Query .Channel.Title }}
+    {{ else }}
+        Search captions of {{ .Channel.Title }}
+    {{ end }}
+{{ end }}
+
+{{ define "channel" }}
+<form hx-get="/{{ .Channel.CustomUrl }}" hx-target="#results" hx-push-url="true">
+    <label for="query">Query</label>
+    <input placeholder="" type="text" name="q" id="query" autocomplete="off">
+    <input type="submit" value="Submit">
+    <span class="htmx-indicator" style="margin-left: 1rem;">Loading...</span>
+</form>
+
+<div id="results">
+    {{ if .IsQuery }}
+        {{ template "results" .Results }}
+    {{ end }}
+</div>
+{{ end }}
