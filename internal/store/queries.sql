@@ -3,6 +3,11 @@ SELECT * FROM channels
 WHERE id = $1
 LIMIT 1;
 
+-- name: ChannelByUrl :one
+SELECT * FROM channels
+WHERE custom_url = $1
+LIMIT 1;
+
 -- name: Channels :many
 SELECT * FROM channels;
 

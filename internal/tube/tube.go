@@ -38,6 +38,7 @@ type ChannelInfo struct {
 		Title string
 		// Description string
 		Thumbnails map[string]Thumbnail
+        CustomUrl string
 	}
 }
 

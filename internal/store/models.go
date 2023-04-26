@@ -15,6 +15,7 @@ type Channel struct {
 	ThumbnailUrl string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	CustomUrl    string
 }
 
 type Failure struct {

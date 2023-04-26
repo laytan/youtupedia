@@ -13,7 +13,7 @@ import (
 )
 
 const channel = `-- name: Channel :one
-SELECT id, title, videos_list_id, thumbnail_url, created_at, updated_at FROM channels
+SELECT id, title, videos_list_id, thumbnail_url, created_at, updated_at, custom_url FROM channels
 WHERE id = $1
 LIMIT 1
 `
@@ -28,12 +28,34 @@ func (q *Queries) Channel(ctx context.Context, id string) (Channel, error) {
 		&i.ThumbnailUrl,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CustomUrl,
+	)
+	return i, err
+}
+
+const channelByUrl = `-- name: ChannelByUrl :one
+SELECT id, title, videos_list_id, thumbnail_url, created_at, updated_at, custom_url FROM channels
+WHERE custom_url = $1
+LIMIT 1
+`
+
+func (q *Queries) ChannelByUrl(ctx context.Context, customUrl string) (Channel, error) {
+	row := q.db.QueryRowContext(ctx, channelByUrl, customUrl)
+	var i Channel
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.VideosListID,
+		&i.ThumbnailUrl,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CustomUrl,
 	)
 	return i, err
 }
 
 const channels = `-- name: Channels :many
-SELECT id, title, videos_list_id, thumbnail_url, created_at, updated_at FROM channels
+SELECT id, title, videos_list_id, thumbnail_url, created_at, updated_at, custom_url FROM channels
 `
 
 func (q *Queries) Channels(ctx context.Context) ([]Channel, error) {
@@ -52,6 +74,7 @@ func (q *Queries) Channels(ctx context.Context) ([]Channel, error) {
 			&i.ThumbnailUrl,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.CustomUrl,
 		); err != nil {
 			return nil, err
 		}
@@ -90,7 +113,7 @@ INSERT INTO channels (
 ) VALUES (
     $1, $2,    $3,             $4
 )
-RETURNING id, title, videos_list_id, thumbnail_url, created_at, updated_at
+RETURNING id, title, videos_list_id, thumbnail_url, created_at, updated_at, custom_url
 `
 
 type CreateChannelParams struct {
@@ -115,6 +138,7 @@ func (q *Queries) CreateChannel(ctx context.Context, arg CreateChannelParams) (C
 		&i.ThumbnailUrl,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CustomUrl,
 	)
 	return i, err
 }
