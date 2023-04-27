@@ -3,3 +3,4 @@ db.sqlite
 bin/*
 !bin/.gitkeep
 .DS_Store
+.env*
