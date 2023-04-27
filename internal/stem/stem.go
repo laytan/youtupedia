@@ -2,42 +2,50 @@ package stem
 
 import (
 	"strings"
+	"sync"
+	"unicode"
 
 	"github.com/reiver/go-porterstemmer"
 )
 
-func StemLine(value string) string {
-    words := StemLineWords(value)
-
-	stemmed := strings.Builder{}
-	for _, word := range words {
-        stemmed.WriteString(word)
-		stemmed.WriteString(" ")
-	}
-
-	return stemmed.String()
+var builders = sync.Pool{
+	New: func() any {
+		return &strings.Builder{}
+	},
 }
 
-func StemLineWords(value string) []string {
-    repper := strings.NewReplacer( // TODO: maybe just replace all non-alpha?
-		",", "",
-		".", "",
-		"!", "",
-        "?", "",
-		`"`, "",
-		`\`, "",
-		"[", "",
-		"]", "",
-        "(", "",
-        ")", "",
-        "~", "",
-	)
-	noSpecial := repper.Replace(value)
-    words := strings.Fields(noSpecial)
+// StemLine is a highly optimized way of stemming a line, removing common punctuation.
+func StemLine(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
 
-    for i, word := range words {
-        words[i] = string(porterstemmer.Stem([]rune(word)))
-    }
+	b := builders.Get().(*strings.Builder)
+	b.Reset()
+	b.Grow(len(value))
 
-    return words
+	lastSpace := -1
+	for i, ch := range value {
+		if unicode.IsSpace(ch) {
+			if i > 1 {
+				word := strings.TrimFunc(value[lastSpace+1:i], trimPuntuation)
+				b.WriteString(porterstemmer.StemString(word))
+				b.WriteByte(byte(' '))
+			}
+
+			lastSpace = i
+		}
+	}
+
+    word := strings.TrimFunc(value[lastSpace+1:], trimPuntuation)
+	b.WriteString(porterstemmer.StemString(word))
+
+	s := b.String()
+	builders.Put(b)
+	return s
+}
+
+func trimPuntuation(r rune) bool {
+	return r == ',' || r == '.' || r == '!' || r == '?' || r == '"'
 }

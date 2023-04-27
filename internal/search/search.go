@@ -21,29 +21,27 @@ var (
 
 type Result struct {
 	Video   store.Video
-	Results []store.Transcript
-	ids     []int64
+	Results []ResultLine
 }
 
 // Channel retrieves all the videos for the given channel, calling Video on each of them.
 // The results are sorted based on the published time of the video.
 func Channel(ctx context.Context, ch *store.Channel, query string) (res []Result, err error) {
-	// Retrieves the videos that contain all the words we query.
-	// These are optimistic matches, because they have to be in order,
-	// and they can span the metadata boundaries, and we have to return the exact part of the transcripts.
-	videos, err := Queries.VideosOfChannelWithWords(ctx, ch.ID, stem.StemLineWords(query))
+	videos, err := Queries.VideosOfChannel(ctx, ch.ID)
 	if err != nil {
 		return nil, fmt.Errorf("retrieving channel videos: %w", err)
 	}
 
-	log.Printf("[INFO]: searching through %d optimistic video matches", len(videos))
+    rQuery := []rune(stem.StemLine(query))
+
+	log.Printf("[INFO]: searching through %d videos", len(videos))
 	var group errgroup.Group
 	group.SetLimit(SearchRoutines)
 	var mu sync.Mutex
 	for _, vid := range videos {
 		vid := vid
 		group.Go(func() error {
-			results, err := Video(&vid, query)
+			results, err := Video(&vid, rQuery)
 			if err != nil {
 				return fmt.Errorf("searching: %w", err)
 			}
@@ -57,8 +55,7 @@ func Channel(ctx context.Context, ch *store.Channel, query string) (res []Result
 
 			res = append(res, Result{
 				Video:   vid,
-				Results: nil,
-				ids:     results,
+				Results: results,
 			})
 			return nil
 		})
@@ -76,31 +73,17 @@ func Channel(ctx context.Context, ch *store.Channel, query string) (res []Result
 		res = res[:MaxResults]
 	}
 
-	// Flatten all resulting transcripts into one slice of ids,
-	// so we can do 1 query for all transcripts.
-	all := make([]int64, 0, len(res))
-	for _, r := range res {
-		all = append(all, r.ids...)
-	}
-
-	log.Printf("[INFO]: retrieving %d matched captions/lines", len(all))
-	ts, err := Queries.TranscriptsByIds(ctx, all)
-	if err != nil {
-		return nil, fmt.Errorf("querying transcripts: %w", err)
-	}
-
-	// The results from the query are in the same order of the given ids to the query.
-	// So, because its ordered, we can do the following to efficiently put them back
-	// with the video that they belong.
-	var curr int
-	for i := range res {
-		res[i].Results = ts[curr : curr+len(res[i].ids)]
-		curr += len(res[i].ids)
-	}
-
 	return res, nil
 }
 
+type ResultLine struct {
+	Text    string
+	Stemmed string
+	Start   int
+}
+
+// TODO: update comment.
+//
 // Video searches for the query inside the video's searchable_transcript.
 // Returning the IDs of the matching transcripts.
 //
@@ -111,43 +94,61 @@ func Channel(ctx context.Context, ch *store.Channel, query string) (res []Result
 //
 // If the match is on the boundary of a transcript (so part is on transcript/line 1 and other part on 2),
 // The second transcript's ID is returned.
-func Video(vid *store.Video, query string) (res []int64, err error) {
+func Video(vid *store.Video, query []rune) (res []ResultLine, err error) {
+	var lines []ResultLine
 	var inMeta bool
-	var matching int
-	var idStart int
-	var idEnd int
-	runes := []rune(stem.StemLine(query))
+	var metaStart int
+	var metaEnd int
+	var currStart int
 	for i, ch := range vid.SearchableTranscript {
-		if matching == len(runes) {
-			id, err := strconv.ParseInt(vid.SearchableTranscript[idStart:idEnd], 10, 64)
-			if err != nil {
-				return nil, fmt.Errorf("could not parse id string: %w", err)
-			}
-
-			res = append(res, id)
-			matching = 0
-		}
-
 		if ch == '~' {
 			if inMeta {
 				inMeta = false
-				idEnd = i
+
+				metaEnd = i
+				start, err := strconv.Atoi(vid.SearchableTranscript[metaStart:metaEnd])
+				if err != nil {
+					return nil, fmt.Errorf("parsing start time: %w", err)
+				}
+				currStart = start
 			} else {
+				if i > 1 {
+					txt := vid.SearchableTranscript[metaEnd+1 : i]
+					stemmed := stem.StemLine(txt)
+					lines = append(lines, ResultLine{
+						Text:    txt,
+						Stemmed: stemmed,
+						Start:   currStart,
+					})
+				}
+
 				inMeta = true
-				idStart = i + 1
+				metaStart = i + 1
 			}
 			continue
 		}
+	}
 
-		if inMeta {
-			continue
+	var matching int
+	for _, line := range lines {
+		for _, ch := range line.Stemmed {
+			if matching == len(query) {
+				res = append(res, line)
+				matching = 0
+			}
+
+			if query[matching] == ch {
+				matching++
+			} else {
+				matching = 0
+			}
 		}
 
-		if runes[matching] == ch {
-			matching++
-		} else {
-			matching = 0
-		}
+        if query[matching] == ' ' {
+            matching++
+        } else {
+            matching = 0
+        }
 	}
 
 	return res, nil

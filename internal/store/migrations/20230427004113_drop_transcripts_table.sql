@@ -1,0 +1,14 @@
+-- +goose Up
+DROP TABLE transcripts;
+
+-- +goose Down
+CREATE TABLE transcripts (
+    id       BIGSERIAL PRIMARY KEY,
+    video_id VARCHAR(255) NOT NULL REFERENCES videos ON DELETE CASCADE ON UPDATE CASCADE,
+    start    DOUBLE PRECISION NOT NULL,
+    duration REAL NOT NULL,
+    text     TEXT NOT NULL,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+);

@@ -18,7 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/laytan/youtupedia/internal/stem"
 	"github.com/laytan/youtupedia/internal/store"
 	"github.com/laytan/youtupedia/internal/tube"
 )
@@ -40,13 +39,13 @@ var (
 )
 
 func init() {
-    if wp, ok := os.LookupEnv("WHISPER_BIN"); ok {
-        BinWhisperCpp = wp
-    }
+	if wp, ok := os.LookupEnv("WHISPER_BIN"); ok {
+		BinWhisperCpp = wp
+	}
 
-    if mp, ok := os.LookupEnv("WHISPER_MODEL"); ok {
-        WhisperModelPath = mp
-    }
+	if mp, ok := os.LookupEnv("WHISPER_MODEL"); ok {
+		WhisperModelPath = mp
+	}
 }
 
 func WhisperNoCaptionFailures(ctx context.Context) (err error) {
@@ -181,8 +180,8 @@ func DownloadFailures(
 					cmd := exec.CommandContext(
 						ctx,
 						BinYtDlp,
-                        "-f",
-                        "bestaudio",
+						"-f",
+						"bestaudio",
 						"--ignore-config",
 						"--no-progress",
 						"--output",
@@ -190,7 +189,7 @@ func DownloadFailures(
 						"--extract-audio",
 						"--audio-format",
 						"wav",
-                        "https://youtube.com/watch?v=" + videoId,
+						"https://youtube.com/watch?v="+videoId,
 					)
 					dlStdout := &bytes.Buffer{}
 					cmd.Stdout = dlStdout // Need to capture stdout for error messages, for some reasons errors are shown on stdout.
@@ -378,20 +377,6 @@ func IndexWhispers(ctx context.Context, errs chan<- error, whispers <-chan *Whis
 						return false
 					}
 
-					if err = qtx.CreateVideo(ctx, store.CreateVideoParams{
-						ID:                   whisper.VideoId,
-						ChannelID:            whisper.Video.Snippet.ChannelId,
-						PublishedAt:          published,
-						Title:                whisper.Video.Snippet.Title,
-						Description:          whisper.Video.Snippet.Description,
-						ThumbnailUrl:         tube.HighestResThumbnail(whisper.Video.Snippet.Thumbnails).Url,
-						SearchableTranscript: "",
-						TranscriptType:       string(store.WhisperBase),
-					}); err != nil {
-						errs <- fmt.Errorf("creating video: %w", err)
-						return false
-					}
-
 					searchable := strings.Builder{}
 					for {
 						row, err := r.Read()
@@ -439,42 +424,28 @@ func IndexWhispers(ctx context.Context, errs chan<- error, whispers <-chan *Whis
 							)
 							return false
 						}
-
-						endMs, err := strconv.Atoi(row[1])
-						if err != nil {
-							errs <- fmt.Errorf(
-								"reading end ms from string %q in row %v: %w",
-								row[1],
-								row,
-								err,
-							)
-							return false
-						}
-
-						durMs := endMs - startMs
+						start := strconv.Itoa(int(startMs / 1000))
 						txt := strings.TrimSpace(row[2])
 
-						id, err := qtx.CreateTranscript(ctx, store.CreateTranscriptParams{
-							VideoID:  whisper.VideoId,
-							Start:    float64(startMs) / 1000,
-							Duration: float32(durMs) / 1000,
-							Text:     txt,
-						})
-						if err != nil {
-							errs <- fmt.Errorf("creating transcript entry for row %v: %w", row, err)
-							return false
-						}
-
-						searchable.WriteString(fmt.Sprintf("~%d~", id))
-						searchable.WriteString(stem.StemLine(txt))
+						searchable.WriteString(" ~")
+						searchable.WriteString(start)
+						searchable.WriteString("~ ")
+						searchable.WriteString(txt)
 					}
 
-                    if err := qtx.SetSearchableTranscript(ctx, store.SetSearchableTranscriptParams{
-                    	ID:                   whisper.VideoId,
-                    	SearchableTranscript: searchable.String(),
-                    }); err != nil {
-                            errs <- fmt.Errorf("updating transcript: %w", err)
-                    }
+					if err = qtx.CreateVideo(ctx, store.CreateVideoParams{
+						ID:                   whisper.VideoId,
+						ChannelID:            whisper.Video.Snippet.ChannelId,
+						PublishedAt:          published,
+						Title:                whisper.Video.Snippet.Title,
+						Description:          whisper.Video.Snippet.Description,
+						ThumbnailUrl:         tube.HighestResThumbnail(whisper.Video.Snippet.Thumbnails).Url,
+						SearchableTranscript: searchable.String(),
+						TranscriptType:       string(store.WhisperBase),
+					}); err != nil {
+						errs <- fmt.Errorf("creating video: %w", err)
+						return false
+					}
 
 					if err := qtx.DeleteFailure(ctx, whisper.FailureId); err != nil {
 						errs <- fmt.Errorf("deleting indexed failure: %w", err)

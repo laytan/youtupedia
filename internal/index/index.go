@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"html"
 	"log"
+	"strconv"
 	"strings"
 
-	"github.com/laytan/youtupedia/internal/stem"
 	"github.com/laytan/youtupedia/internal/store"
 	"github.com/laytan/youtupedia/internal/tube"
 	"golang.org/x/sync/errgroup"
@@ -115,6 +115,8 @@ func IndexChannel(ctx context.Context, channel *store.Channel) error {
 	return nil
 }
 
+// TODO: update doc comment.
+//
 // IndexVideo retrieves YouTube captions for the given video and parses it.
 // A store.Video is created in the database, with multiple store.Transcript entries connected.
 //
@@ -169,6 +171,16 @@ func IndexVideo(ctx context.Context, channelId string, video tube.PlaylistItem) 
 		panic("unreachable")
 	}
 
+	searchable := strings.Builder{}
+	for _, entry := range captions.Entries {
+		txt := html.UnescapeString(entry.Text)
+		start := strconv.Itoa(int(entry.Start))
+		searchable.WriteString("~")
+		searchable.WriteString(start)
+		searchable.WriteString("~")
+		searchable.WriteString(txt)
+	}
+
 	if err = qtx.CreateVideo(ctx, store.CreateVideoParams{
 		ID:                   videoId,
 		ChannelID:            channelId,
@@ -176,34 +188,10 @@ func IndexVideo(ctx context.Context, channelId string, video tube.PlaylistItem) 
 		Title:                video.Snippet.Title,
 		Description:          video.Snippet.Description,
 		ThumbnailUrl:         tube.HighestResThumbnail(video.Snippet.Thumbnails).Url,
-		SearchableTranscript: "",
+		SearchableTranscript: searchable.String(),
 		TranscriptType:       string(t),
 	}); err != nil {
 		return fmt.Errorf("creating video %q: %w", videoId, err)
-	}
-
-	searchable := strings.Builder{}
-	for _, entry := range captions.Entries {
-		txt := html.UnescapeString(entry.Text)
-		id, err := qtx.CreateTranscript(ctx, store.CreateTranscriptParams{
-			VideoID:  videoId,
-			Start:    entry.Start,
-			Duration: entry.Dur,
-			Text:     txt,
-		})
-		if err != nil {
-			return fmt.Errorf("inserting caption %v: %w", entry, err)
-		}
-
-		searchable.WriteString(fmt.Sprintf("~%d~", id))
-		searchable.WriteString(stem.StemLine(txt))
-	}
-
-	if err = qtx.SetSearchableTranscript(ctx, store.SetSearchableTranscriptParams{
-		ID:                   videoId,
-		SearchableTranscript: searchable.String(),
-	}); err != nil {
-		return fmt.Errorf("setting searchable transcript: %w", err)
 	}
 
 	if err = tx.Commit(); err != nil {

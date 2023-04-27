@@ -8,8 +8,6 @@ package store
 import (
 	"context"
 	"time"
-
-	"github.com/lib/pq"
 )
 
 const channel = `-- name: Channel :one
@@ -162,34 +160,6 @@ func (q *Queries) CreateFailure(ctx context.Context, arg CreateFailureParams) er
 	return err
 }
 
-const createTranscript = `-- name: CreateTranscript :one
-INSERT INTO transcripts (
-    video_id, start, duration, text
-) VALUES (
-    $1,        $2,     $3,        $4
-)
-RETURNING id
-`
-
-type CreateTranscriptParams struct {
-	VideoID  string
-	Start    float64
-	Duration float32
-	Text     string
-}
-
-func (q *Queries) CreateTranscript(ctx context.Context, arg CreateTranscriptParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, createTranscript,
-		arg.VideoID,
-		arg.Start,
-		arg.Duration,
-		arg.Text,
-	)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
-}
-
 const createVideo = `-- name: CreateVideo :exec
 INSERT INTO videos (
     id, channel_id, published_at, title, description, thumbnail_url, searchable_transcript, transcript_type
@@ -305,78 +275,6 @@ func (q *Queries) NoCaptionFailures(ctx context.Context, channelID string) ([]Fa
 			&i.ChannelID,
 			&i.Data,
 			&i.Type,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const setSearchableTranscript = `-- name: SetSearchableTranscript :exec
-UPDATE videos
-SET searchable_transcript = $2
-WHERE id = $1
-`
-
-type SetSearchableTranscriptParams struct {
-	ID                   string
-	SearchableTranscript string
-}
-
-func (q *Queries) SetSearchableTranscript(ctx context.Context, arg SetSearchableTranscriptParams) error {
-	_, err := q.db.ExecContext(ctx, setSearchableTranscript, arg.ID, arg.SearchableTranscript)
-	return err
-}
-
-const transcript = `-- name: Transcript :one
-SELECT id, video_id, start, duration, text, created_at, updated_at FROM transcripts
-WHERE id = $1
-`
-
-func (q *Queries) Transcript(ctx context.Context, id int64) (Transcript, error) {
-	row := q.db.QueryRowContext(ctx, transcript, id)
-	var i Transcript
-	err := row.Scan(
-		&i.ID,
-		&i.VideoID,
-		&i.Start,
-		&i.Duration,
-		&i.Text,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const transcriptsByIds = `-- name: TranscriptsByIds :many
-SELECT id, video_id, start, duration, text, created_at, updated_at FROM transcripts
-WHERE id = ANY($1::bigint[])
-`
-
-func (q *Queries) TranscriptsByIds(ctx context.Context, ids []int64) ([]Transcript, error) {
-	rows, err := q.db.QueryContext(ctx, transcriptsByIds, pq.Array(ids))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Transcript
-	for rows.Next() {
-		var i Transcript
-		if err := rows.Scan(
-			&i.ID,
-			&i.VideoID,
-			&i.Start,
-			&i.Duration,
-			&i.Text,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
