@@ -3,6 +3,8 @@ module github.com/laytan/youtupedia
 go 1.20
 
 require (
+	github.com/gofiber/fiber/v2 v2.44.0
+	github.com/gofiber/template v1.8.1
 	github.com/lib/pq v1.10.8
 	github.com/pressly/goose/v3 v3.10.0
 	github.com/reiver/go-porterstemmer v1.0.1
@@ -11,8 +13,6 @@ require (
 
 require (
 	github.com/andybalholm/brotli v1.0.5 // indirect
-	github.com/gofiber/fiber/v2 v2.44.0 // indirect
-	github.com/gofiber/template v1.8.1 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/klauspost/compress v1.16.5 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
