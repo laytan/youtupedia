@@ -4,3 +4,4 @@ bin/*
 !bin/.gitkeep
 .DS_Store
 .env*
+internal/youtupedia/static/style.css
