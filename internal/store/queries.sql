@@ -27,9 +27,9 @@ DESC LIMIT 1;
 
 -- name: CreateTranscript :one
 INSERT INTO transcripts (
-    video_id, start, duration, text
+    video_id, start, text
 ) VALUES (
-    $1,        $2,     $3,        $4
+    $1,       $2,    $3
 )
 RETURNING id;
 
@@ -37,7 +37,7 @@ RETURNING id;
 INSERT INTO videos (
     id, channel_id, published_at, title, description, thumbnail_url, searchable_transcript, transcript_type
 ) VALUES (
-    $1,  $2,          $3,            $4,     $5,           $6,             $7,                     $8
+    $1,  $2,        $3,           $4,    $5,          $6,            $7,                    $8
 );
 
 -- name: VideosOfChannel :many
@@ -52,7 +52,7 @@ WHERE id = $1;
 INSERT INTO failures (
     channel_id, data, type
 ) VALUES (
-    $1,          $2,    $3
+    $1,         $2,   $3
 );
 
 -- name: NoCaptionFailures :many

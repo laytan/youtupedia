@@ -186,10 +186,9 @@ func IndexVideo(ctx context.Context, channelId string, video tube.PlaylistItem) 
 	for _, entry := range captions.Entries {
 		txt := html.UnescapeString(entry.Text)
 		id, err := qtx.CreateTranscript(ctx, store.CreateTranscriptParams{
-			VideoID:  videoId,
-			Start:    entry.Start,
-			Duration: entry.Dur,
-			Text:     txt,
+			VideoID: videoId,
+			Start:   int32(entry.Start),
+			Text:    txt,
 		})
 		if err != nil {
 			return fmt.Errorf("inserting caption %v: %w", entry, err)

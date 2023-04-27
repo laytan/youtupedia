@@ -147,7 +147,7 @@ const createFailure = `-- name: CreateFailure :exec
 INSERT INTO failures (
     channel_id, data, type
 ) VALUES (
-    $1,          $2,    $3
+    $1,         $2,   $3
 )
 `
 
@@ -164,27 +164,21 @@ func (q *Queries) CreateFailure(ctx context.Context, arg CreateFailureParams) er
 
 const createTranscript = `-- name: CreateTranscript :one
 INSERT INTO transcripts (
-    video_id, start, duration, text
+    video_id, start, text
 ) VALUES (
-    $1,        $2,     $3,        $4
+    $1,       $2,    $3
 )
 RETURNING id
 `
 
 type CreateTranscriptParams struct {
-	VideoID  string
-	Start    float64
-	Duration float32
-	Text     string
+	VideoID string
+	Start   int32
+	Text    string
 }
 
 func (q *Queries) CreateTranscript(ctx context.Context, arg CreateTranscriptParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, createTranscript,
-		arg.VideoID,
-		arg.Start,
-		arg.Duration,
-		arg.Text,
-	)
+	row := q.db.QueryRowContext(ctx, createTranscript, arg.VideoID, arg.Start, arg.Text)
 	var id int64
 	err := row.Scan(&id)
 	return id, err
@@ -194,7 +188,7 @@ const createVideo = `-- name: CreateVideo :exec
 INSERT INTO videos (
     id, channel_id, published_at, title, description, thumbnail_url, searchable_transcript, transcript_type
 ) VALUES (
-    $1,  $2,          $3,            $4,     $5,           $6,             $7,                     $8
+    $1,  $2,        $3,           $4,    $5,          $6,            $7,                    $8
 )
 `
 
@@ -338,7 +332,7 @@ func (q *Queries) SetSearchableTranscript(ctx context.Context, arg SetSearchable
 }
 
 const transcript = `-- name: Transcript :one
-SELECT id, video_id, start, duration, text, created_at, updated_at FROM transcripts
+SELECT id, video_id, start, text FROM transcripts
 WHERE id = $1
 `
 
@@ -349,16 +343,13 @@ func (q *Queries) Transcript(ctx context.Context, id int64) (Transcript, error) 
 		&i.ID,
 		&i.VideoID,
 		&i.Start,
-		&i.Duration,
 		&i.Text,
-		&i.CreatedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const transcriptsByIds = `-- name: TranscriptsByIds :many
-SELECT id, video_id, start, duration, text, created_at, updated_at FROM transcripts
+SELECT id, video_id, start, text FROM transcripts
 WHERE id = ANY($1::bigint[])
 `
 
@@ -375,10 +366,7 @@ func (q *Queries) TranscriptsByIds(ctx context.Context, ids []int64) ([]Transcri
 			&i.ID,
 			&i.VideoID,
 			&i.Start,
-			&i.Duration,
 			&i.Text,
-			&i.CreatedAt,
-			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

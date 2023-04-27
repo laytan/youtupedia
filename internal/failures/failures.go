@@ -440,25 +440,12 @@ func IndexWhispers(ctx context.Context, errs chan<- error, whispers <-chan *Whis
 							return false
 						}
 
-						endMs, err := strconv.Atoi(row[1])
-						if err != nil {
-							errs <- fmt.Errorf(
-								"reading end ms from string %q in row %v: %w",
-								row[1],
-								row,
-								err,
-							)
-							return false
-						}
-
-						durMs := endMs - startMs
 						txt := strings.TrimSpace(row[2])
 
 						id, err := qtx.CreateTranscript(ctx, store.CreateTranscriptParams{
-							VideoID:  whisper.VideoId,
-							Start:    float64(startMs) / 1000,
-							Duration: float32(durMs) / 1000,
-							Text:     txt,
+							VideoID: whisper.VideoId,
+							Start:   int32((time.Duration(startMs) * time.Millisecond) / time.Second),
+							Text:    txt,
 						})
 						if err != nil {
 							errs <- fmt.Errorf("creating transcript entry for row %v: %w", row, err)
